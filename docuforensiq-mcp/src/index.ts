@@ -300,20 +300,101 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
   const anomalyDomainsAffected = [
     ...new Set(resolvedProfiles.map((p) => p.profile.domain)),
   ];
+  const domainSpread = anomalyDomainsAffected.length;
 
-  // 3. Evaluate co-occurrence patterns
-  const triggeredPatterns = CO_OCCURRENCE_RULES.filter((rule) =>
+  // 3. Evaluate cross-observation relationships
+  const crossObservationRelationships = CO_OCCURRENCE_RULES.filter((rule) =>
     rule.domainCodes.every((code) => domainCodesPresent.has(code))
   ).map((rule) => ({
     pattern_name: rule.patternName,
     observations_involved: resolvedProfiles
       .filter((p) => rule.domainCodes.includes(p.profile.domainCode))
       .map((p) => p.key),
-    pattern_significance: rule.significance,
+    significance: rule.significance,
     examination_priority: rule.priority,
   }));
 
-  // 4. Observation vs. interpretation distinctions
+  const patternsTriggered = crossObservationRelationships.length;
+  const highPriorityPatternCount = crossObservationRelationships.filter(
+    (p) => p.examination_priority === "high"
+  ).length;
+
+  // 4. Overall assessment
+  const docContext =
+    DOCUMENT_TYPE_CONTEXT[document_type] ??
+    "this document type warrants careful examination of the recorded observations";
+
+  let overallSummary =
+    `This evidence package covers a ${document_type} (case ${case_id}) with ` +
+    `${observations.length} recorded observation(s) spanning ${domainSpread} anomaly domain(s). `;
+
+  if (patternsTriggered > 0) {
+    overallSummary +=
+      `${patternsTriggered} cross-observation relationship(s) were identified` +
+      (highPriorityPatternCount > 0
+        ? `, of which ${highPriorityPatternCount} are rated high-priority`
+        : "") +
+      `. Given that ${docContext}, the examiner should direct attention to the prioritized examination steps below.`;
+  } else {
+    overallSummary +=
+      `No cross-observation relationships were identified; each observation should be examined independently. ` +
+      `Given that ${docContext}, the examiner should direct attention to the prioritized examination steps below.`;
+  }
+
+  if (examiner_notes && examiner_notes.trim().length > 0) {
+    overallSummary +=
+      ` Examiner notes are present and should be reviewed alongside these findings.`;
+  }
+
+  // 5. Key findings — only observations implicated in at least one triggered relationship
+  const patternImplicatedKeys = new Set(
+    crossObservationRelationships.flatMap((p) => p.observations_involved)
+  );
+
+  const keyFindings = resolvedProfiles
+    .filter((p) => patternImplicatedKeys.has(p.key))
+    .map((p) => ({
+      observation: p.key,
+      anomaly_domain: p.profile.domain,
+      significance: p.profile.interpretationStatement,
+      implicated_in_patterns: crossObservationRelationships
+        .filter((rel) => rel.observations_involved.includes(p.key))
+        .map((rel) => rel.pattern_name),
+    }));
+
+  // 6. Evidentiary significance — analytical weight of the observation combination,
+  //    without repeating domain/pattern counts already in overall_assessment.
+  let evidentiarySignificance: string;
+
+  if (patternsTriggered > 0) {
+    const highPatterns = crossObservationRelationships
+      .filter((p) => p.examination_priority === "high")
+      .map((p) => p.pattern_name);
+    const medPatterns = crossObservationRelationships
+      .filter((p) => p.examination_priority === "medium")
+      .map((p) => p.pattern_name);
+
+    const patternSentences: string[] = [];
+    if (highPatterns.length > 0) {
+      patternSentences.push(
+        `The high-priority relationship(s) identified — ${highPatterns.join("; ")} — indicate that the implicated observations should not be examined in isolation, as their co-occurrence may amplify the significance of each individual indicator.`
+      );
+    }
+    if (medPatterns.length > 0) {
+      patternSentences.push(
+        `The medium-priority relationship(s) — ${medPatterns.join("; ")} — warrant structured examination but do not independently establish alteration.`
+      );
+    }
+    evidentiarySignificance =
+      patternSentences.join(" ") +
+      ` The combination of observations across ${domainSpread} domain(s) cannot be resolved to a single explanation without structured forensic examination.`;
+  } else {
+    evidentiarySignificance =
+      `The recorded observations fall into separate anomaly domains with no identified cross-domain relationship. ` +
+      `Each observation should be assessed independently; the absence of cross-domain relationships does not establish that the document is unaltered.`;
+  }
+
+  // 7. Observation vs. interpretation distinctions — unchanged
   const observationsVsInterpretations = resolvedProfiles.map((p) => ({
     observation: p.key,
     anomaly_domain: p.profile.domain,
@@ -332,8 +413,34 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
     });
   }
 
-  // 5. Build prioritised next steps — de-duplicate by step text, rank by
-  //    (a) whether the step is implicated in a high-priority co-occurrence pattern,
+  // 8. Concern level — derived deterministically from pattern priority and domain spread.
+  //    Describes need for further examination only; does not assert forgery or alteration.
+  let concernRating: "low" | "moderate" | "elevated";
+  let concernBasis: string;
+
+  if (highPriorityPatternCount > 0 || domainSpread >= 3) {
+    concernRating = "elevated";
+    concernBasis = highPriorityPatternCount > 0
+      ? `One or more high-priority cross-observation relationships were identified, indicating that the combination of observations warrants structured forensic examination.`
+      : `Observations span ${domainSpread} distinct anomaly domains, indicating broad scope that warrants structured forensic examination.`;
+  } else if (
+    crossObservationRelationships.some((p) => p.examination_priority === "medium") ||
+    domainSpread === 2
+  ) {
+    concernRating = "moderate";
+    concernBasis = crossObservationRelationships.some(
+      (p) => p.examination_priority === "medium"
+    )
+      ? `One or more medium-priority cross-observation relationships were identified, indicating that targeted comparative examination is warranted.`
+      : `Observations span two distinct anomaly domains, indicating that more than one aspect of the document warrants examination.`;
+  } else {
+    concernRating = "low";
+    concernBasis =
+      `No cross-observation relationships were triggered and observations are confined to a single anomaly domain; each observation should be assessed independently.`;
+  }
+
+  // 9. Prioritized next examinations — de-duplicate by step text, rank by
+  //    (a) whether the step is implicated in a high-priority relationship,
   //    (b) the base priority of the individual observation profile.
   const stepMap = new Map<
     string,
@@ -341,7 +448,7 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
   >();
 
   const highPriorityDomainCodes = new Set(
-    triggeredPatterns
+    crossObservationRelationships
       .filter((p) => p.examination_priority === "high")
       .flatMap((p) =>
         resolvedProfiles
@@ -354,7 +461,6 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
     const isHighPriorityDomain = highPriorityDomainCodes.has(
       profile.domainCode
     );
-    // Boost priority rank for observations implicated in high-priority patterns
     const effectivePriority = isHighPriorityDomain
       ? Math.max(1, profile.stepPriority - 1)
       : profile.stepPriority;
@@ -362,10 +468,9 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
     if (!stepMap.has(profile.examinationStep)) {
       const ruleRef =
         rule_based_findings?.find((f) => f.observation === key)?.next_step;
-      const rationale =
-        isHighPriorityDomain
-          ? `Elevated to higher priority because "${key}" is implicated in a co-occurrence pattern of significance. ${ruleRef ? "Rule engine baseline step: " + ruleRef : ""}`
-          : `Recommended for "${key}" (${profile.domain}). ${ruleRef ? "Rule engine baseline step: " + ruleRef : ""}`;
+      const rationale = isHighPriorityDomain
+        ? `Elevated to higher priority because "${key}" is implicated in a cross-observation relationship of significance. ${ruleRef ? "Rule engine baseline step: " + ruleRef : ""}`
+        : `Recommended for "${key}" (${profile.domain}). ${ruleRef ? "Rule engine baseline step: " + ruleRef : ""}`;
 
       stepMap.set(profile.examinationStep, {
         step: profile.examinationStep,
@@ -373,7 +478,6 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
         rank: effectivePriority,
       });
     } else {
-      // Keep the lower (more urgent) rank if this observation also maps here
       const existing = stepMap.get(profile.examinationStep)!;
       if (effectivePriority < existing.rank) {
         existing.rank = effectivePriority;
@@ -381,7 +485,7 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
     }
   }
 
-  const prioritisedNextSteps = [...stepMap.values()]
+  const prioritizedNextExaminations = [...stepMap.values()]
     .sort((a, b) => a.rank - b.rank)
     .map((entry, index) => ({
       priority: index + 1,
@@ -389,50 +493,17 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
       rationale: entry.rationale,
     }));
 
-  // 6. Evidentiary significance summary
-  const domainList = anomalyDomainsAffected.join(", ");
-  const highPatternCount = triggeredPatterns.filter(
-    (p) => p.examination_priority === "high"
-  ).length;
-  const docContext =
-    DOCUMENT_TYPE_CONTEXT[document_type] ??
-    "this document type warrants careful examination of the recorded observations";
-
-  let significanceSummary =
-    `This evidence package records ${observations.length} observation(s) spanning ${anomalyDomainsAffected.length} anomaly domain(s) ` +
-    `(${domainList}) for a ${document_type} (case ${case_id}). `;
-
-  if (triggeredPatterns.length > 0) {
-    significanceSummary +=
-      `${triggeredPatterns.length} co-occurrence pattern(s) were identified across the recorded observations` +
-      (highPatternCount > 0
-        ? `, of which ${highPatternCount} are rated high-priority for examination`
-        : "") +
-      `. `;
-  } else {
-    significanceSummary +=
-      "No multi-domain co-occurrence patterns were identified; the recorded observations are in separate anomaly domains. ";
-  }
-
-  significanceSummary +=
-    `Given that ${docContext}, the examiner should direct attention to the prioritised examination steps below. ` +
-    `The significance of these observations as a combination cannot be resolved without structured forensic examination.`;
-
-  if (examiner_notes && examiner_notes.trim().length > 0) {
-    significanceSummary +=
-      ` Examiner notes are present and should be reviewed alongside these findings, as they may contain context that affects the interpretation of individual observations.`;
-  }
-
-  // 7. Uncertainty statement
+  // 10. Uncertainty statement — substance unchanged
   const uncertaintyStatement =
     "These findings represent an interpretive layer over preliminary observations recorded by the examiner. " +
     "Each observation is a potential indicator, not a confirmed finding. " +
-    "Co-occurrence patterns and priority rankings are derived from structured rules and do not incorporate physical examination, " +
+    "Cross-observation relationships and priority rankings are derived from structured rules and do not incorporate physical examination, " +
     "instrument-based analysis, or expert judgment. " +
     "The weight to be given to any individual observation or combination depends on factors not captured in this evidence package, " +
     "including the condition of the document, its provenance, and the context of examination. " +
     "All interpretations carry uncertainty and must be evaluated by a qualified forensic document examiner.";
 
+  // 11. Forensic disclaimer — substance unchanged
   const disclaimer =
     "This analysis does not constitute expert forensic opinion. " +
     "It does not establish — and must not be interpreted as establishing — that the document is forged, altered, or inauthentic. " +
@@ -441,23 +512,24 @@ function analyzeDocumentEvidence(input: z.infer<typeof InputSchema>): object {
   return {
     case_id,
     document_type,
-    anomaly_domains_affected: anomalyDomainsAffected,
-    observations_recorded: observations.length,
-    co_occurrence_patterns:
-      triggeredPatterns.length > 0
-        ? triggeredPatterns
-        : [
-            {
-              pattern_name: "No multi-domain co-occurrence detected",
-              observations_involved: observations,
-              pattern_significance:
-                "The recorded observations fall into separate anomaly domains with no identified cross-domain pattern. Each should be examined independently using the prioritised steps below.",
-              examination_priority: "low",
-            },
-          ],
-    evidentiary_significance: significanceSummary,
+    overall_assessment: {
+      observations_recorded: observations.length,
+      anomaly_domains_affected: anomalyDomainsAffected,
+      domain_spread: domainSpread,
+      patterns_triggered: patternsTriggered,
+      high_priority_patterns: highPriorityPatternCount,
+      summary: overallSummary,
+    },
+    key_findings: keyFindings,
+    // Empty array when no relationships triggered — no synthetic placeholder object
+    cross_observation_relationships: crossObservationRelationships,
+    evidentiary_significance: evidentiarySignificance,
     observations_vs_interpretations: observationsVsInterpretations,
-    prioritised_next_steps: prioritisedNextSteps,
+    concern_level: {
+      rating: concernRating,
+      basis: concernBasis,
+    },
+    prioritized_next_examinations: prioritizedNextExaminations,
     uncertainty_statement: uncertaintyStatement,
     disclaimer,
     ...(unknownObservations.length > 0 && {
