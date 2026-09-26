@@ -1,5 +1,5 @@
 import streamlit as st
-
+import json
 # -----------------------------
 # Page configuration
 # -----------------------------
@@ -13,6 +13,7 @@ st.set_page_config(
 # Forensic Analysis Engine
 # -----------------------------
 def analyze_observations(observations):
+    
     analysis_rules = {
         "Font inconsistency": {
             "category": "Typography Anomaly",
@@ -127,7 +128,37 @@ def analyze_observations(observations):
 
     return results
 
+# -----------------------------
+# AI Analysis Input Builder
+# -----------------------------
+def build_ai_analysis_input(
+    case_id,
+    document_type,
+    observations,
+    notes,
+    analysis_results
+):
+    """
+    Creates a structured evidence package that can later
+    be sent to an AI analysis service or IBM Bob workflow.
+    """
 
+    ai_input = {
+        "case_id": case_id,
+        "document_type": document_type,
+        "observations": observations,
+        "examiner_notes": notes,
+        "rule_based_findings": analysis_results,
+        "analysis_instruction": (
+            "Analyze the documented observations and rule-based findings. "
+            "Identify relationships between observations, explain why the "
+            "combination may require further forensic examination, and "
+            "suggest appropriate next examination steps. Do not conclude "
+            "that the document is forged solely from these observations."
+        )
+    }
+
+    return ai_input
 # -----------------------------
 # Header
 # -----------------------------
@@ -332,6 +363,38 @@ if st.button("🔍 Analyze Observations", type="primary"):
         # -----------------------------
         # Forensic caution
         # -----------------------------
+	        # -----------------------------
+        # AI Analysis Preparation
+        # -----------------------------
+        st.header("5. AI-Assisted Analysis")
+
+        st.write(
+            "The structured examination findings below can be provided "
+            "to an AI analysis service for explainable forensic reasoning."
+        )
+
+        ai_input = build_ai_analysis_input(
+            case_id,
+            document_type,
+            observations,
+            notes,
+            analysis_results
+        )
+
+        with st.expander("View structured AI analysis input"):
+            st.json(ai_input)
+
+        ai_prompt = json.dumps(
+            ai_input,
+            indent=2
+        )
+
+        st.download_button(
+            label="📥 Download AI Analysis Input",
+            data=ai_prompt,
+            file_name=f"{case_id}_ai_analysis_input.json",
+            mime="application/json"
+        )
         st.subheader("⚠️ Examination Note")
 
         st.info(
