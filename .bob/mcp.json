@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "docuforensiq-mcp": {
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/docuforensiq-mcp/build/index.js"
+      ],
+      "cwd": "${workspaceFolder}/docuforensiq-mcp"
+    }
+  }
+}

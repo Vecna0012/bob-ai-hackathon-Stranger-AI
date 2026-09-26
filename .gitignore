@@ -94,3 +94,6 @@ logs/
 .terraform/
 *.tfstate
 *.tfstate.backup
+# Keep DocuForensIQ MCP compiled entrypoint
+!/docuforensiq-mcp/build/
+!/docuforensiq-mcp/build/index.js

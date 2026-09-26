@@ -1,0 +1,21 @@
+{
+  "name": "docuforensiq-mcp",
+  "version": "0.1.0",
+  "description": "MCP server providing an AI-assisted forensic reasoning layer for DocuForensIQ",
+  "type": "module",
+  "bin": {
+    "docuforensiq-mcp": "./build/index.js"
+  },
+  "files": ["build"],
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}
