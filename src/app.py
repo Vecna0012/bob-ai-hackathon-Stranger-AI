@@ -361,9 +361,8 @@ if st.button("🔍 Analyze Observations", type="primary"):
             st.divider()
 
         # -----------------------------
-        # Forensic caution
+                # Forensic caution
         # -----------------------------
-	        # -----------------------------
         # AI Analysis Preparation
         # -----------------------------
         st.header("5. AI-Assisted Analysis")
@@ -371,6 +370,39 @@ if st.button("🔍 Analyze Observations", type="primary"):
         st.write(
             "The structured examination findings below can be provided "
             "to an AI analysis service for explainable forensic reasoning."
+        )
+
+        st.info(
+            "Next step: provide this structured evidence package to IBM Bob. "
+            "Bob can use the DocuForensIQ MCP server to perform "
+            "cross-observation forensic reasoning and return an "
+            "explainable examination assessment."
+        )
+
+        st.markdown("### 🤖 IBM Bob Analysis Workflow")
+
+        st.write(
+            "1. DocuForensIQ records the examiner's observations."
+        )
+
+        st.write(
+            "2. The observations and rule-based findings are converted "
+            "into a structured evidence package."
+        )
+
+        st.write(
+            "3. IBM Bob receives the evidence package and can invoke "
+            "`analyze_document_evidence` through the DocuForensIQ MCP server."
+        )
+
+        st.write(
+            "4. The MCP server analyzes relationships between observations "
+            "and produces prioritized forensic examination guidance."
+        )
+
+        st.write(
+            "5. Bob returns an explainable analysis without independently "
+            "declaring the document forged."
         )
 
         ai_input = build_ai_analysis_input(
@@ -395,6 +427,7 @@ if st.button("🔍 Analyze Observations", type="primary"):
             file_name=f"{case_id}_ai_analysis_input.json",
             mime="application/json"
         )
+
         st.subheader("⚠️ Examination Note")
 
         st.info(
