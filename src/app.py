@@ -1,5 +1,6 @@
 import streamlit as st
 import json
+import re
 # -----------------------------
 # Page configuration
 # -----------------------------
@@ -131,6 +132,31 @@ def analyze_observations(observations):
 # -----------------------------
 # AI Analysis Input Builder
 # -----------------------------
+def extract_bob_number(text, label):
+    if not text:
+        return "—"
+
+    pattern = rf"\|\s*{re.escape(label)}\s*\|\s*(\d+)"
+    match = re.search(pattern, text)
+
+    if match:
+        return int(match.group(1))
+
+    return "—"
+def extract_concern_level(text):
+    if not text:
+        return "—"
+
+    match = re.search(
+        r"### Concern Level.*?\*\*([^*]+)\*\*",
+        text,
+        re.DOTALL
+    )
+
+    if match:
+        return match.group(1).strip()
+
+    return "—"
 def build_ai_analysis_input(
     case_id,
     document_type,
@@ -436,4 +462,229 @@ if st.button("🔍 Analyze Observations", type="primary"):
             "entered by the examiner. They do not independently "
             "establish that a document is forged. Further examination "
             "by a qualified forensic document examiner may be required."
+        )
+ # -----------------------------
+# Import IBM Bob Analysis
+# -----------------------------
+
+st.divider()
+
+st.header("6. Import IBM Bob Analysis")
+
+st.write(
+    "After IBM Bob completes the MCP analysis, "
+    "import the structured analysis result here."
+)
+
+st.markdown("### 📁 Option 1 — Upload Bob's JSON")
+
+uploaded_analysis = st.file_uploader(
+    "Upload the Bob analysis JSON file",
+    type=["json"],
+    help="Upload the structured JSON returned by IBM Bob."
+)
+
+st.markdown("### 📋 Option 2 — Paste Bob's Analysis")
+
+pasted_analysis = st.text_area(
+    "Paste the complete Bob analysis here",
+    height=350,
+    placeholder="Paste the complete analysis returned by IBM Bob..."
+)
+
+# -----------------------------
+# Submit button
+# -----------------------------
+
+submit_bob = st.button(
+    "🚀 Submit Bob Analysis",
+    type="primary"
+)
+
+# -----------------------------
+# Process Bob analysis
+# -----------------------------
+
+if submit_bob:
+
+    bob_analysis_text = None
+
+    # Uploaded JSON
+    if uploaded_analysis is not None:
+
+        raw_content = uploaded_analysis.read().decode("utf-8")
+
+        try:
+            bob_data = json.loads(raw_content)
+
+            bob_analysis_text = json.dumps(
+                bob_data,
+                indent=2
+            )
+
+        except json.JSONDecodeError:
+
+            st.error(
+                "The uploaded JSON file is not valid JSON."
+            )
+
+    # Pasted analysis
+    elif pasted_analysis.strip():
+
+        bob_analysis_text = pasted_analysis.strip()
+
+    # Nothing provided
+    else:
+
+        st.warning(
+            "Please upload Bob's JSON or paste Bob's analysis "
+            "before submitting."
+        )
+
+    # -----------------------------
+    # Display Bob result
+    # -----------------------------
+
+    if bob_analysis_text:
+
+        st.success(
+            "Bob analysis submitted successfully."
+        )
+
+        st.subheader(
+            "📊 IBM Bob Forensic Analysis"
+        )
+
+        # -----------------------------
+        # Extract summary values
+        # -----------------------------
+
+        observations_count = extract_bob_number(
+            bob_analysis_text,
+            "Observations Recorded"
+        )
+
+        anomaly_domains_count = extract_bob_number(
+            bob_analysis_text,
+            "Domain Spread"
+        )
+
+        cross_observation_count = extract_bob_number(
+            bob_analysis_text,
+            "Cross-Observation Patterns Triggered"
+        )
+
+        high_priority_count = extract_bob_number(
+            bob_analysis_text,
+            "High-Priority Patterns"
+        )
+
+        concern_level = extract_concern_level(
+            bob_analysis_text
+        )
+
+        # -----------------------------
+        # Analysis Summary
+        # -----------------------------
+
+        st.markdown("### 📌 Analysis Summary")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric(
+                "Observations",
+                observations_count
+            )
+
+        with col2:
+            st.metric(
+                "Anomaly Domains",
+                anomaly_domains_count
+            )
+
+        with col3:
+            st.metric(
+                "Cross-Observation Patterns",
+                cross_observation_count
+            )
+
+        with col4:
+            st.metric(
+                "High-Priority Patterns",
+                high_priority_count
+            )
+
+        st.divider()
+
+        # -----------------------------
+        # Concern Level
+        # -----------------------------
+
+        st.subheader("⚠️ Concern Level")
+
+        if str(concern_level).upper() == "ELEVATED":
+            st.warning("🟠 ELEVATED")
+        elif str(concern_level).upper() == "HIGH":
+            st.error("🔴 HIGH")
+        elif str(concern_level).upper() == "LOW":
+            st.success("🟢 LOW")
+        else:
+            st.info(concern_level)
+
+        st.divider()
+
+        # -----------------------------
+        # Key Findings
+        # -----------------------------
+
+        st.subheader("🔎 Key Findings")
+
+        # Extract the Key Findings section from Bob's analysis
+        key_findings_match = re.search(
+            r"### Key Findings\s*(.*?)(?=### Cross-Observation Relationships)",
+            bob_analysis_text,
+            re.DOTALL
+        )
+
+        if key_findings_match:
+
+            key_findings_text = key_findings_match.group(1).strip()
+
+            st.markdown(key_findings_text)
+
+        else:
+
+            st.info(
+                "No Key Findings section was detected in the Bob analysis."
+            )
+    st.divider()
+
+        # -----------------------------
+        # Complete Bob Analysis
+        # -----------------------------
+
+    with st.expander(
+            "🔍 View Complete IBM Bob Analysis",
+            expanded=False
+        ):
+
+            st.markdown(
+                bob_analysis_text
+            )
+
+        # -----------------------------
+        # Forensic Disclaimer
+        # -----------------------------
+
+    st.divider()
+
+    st.subheader("⚖️ Forensic Disclaimer")
+
+    st.info(
+            "These findings represent potential anomaly indicators "
+            "based on the observations provided. They do not establish "
+            "that a document is forged, altered, or inauthentic. "
+            "Further examination by a qualified forensic document "
+            "examiner may be required."
         )
